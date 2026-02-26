@@ -66,6 +66,24 @@ class GameRenderer:
         count_text = self.font_medium.render(f"Count: {count}", True, (255, 255, 255))
         self.screen.blit(count_text, (x, y + 40))
     
+    def draw_hand_info_colored(self, label, count, x, y, color):
+        label_surface = self.font_medium.render(label, True, color)
+        self.screen.blit(label_surface, (x, y))
+        
+        count_text = self.font_medium.render(f"Count: {count}", True, color)
+        self.screen.blit(count_text, (x, y + 40))
+    
+    def draw_hand_info_left(self, label, count, x, y, color):
+        """Draw hand info to the left of cards (vertical stacked layout)"""
+        label_surface = self.font_medium.render(label, True, color)
+        self.screen.blit(label_surface, (x, y))
+        
+        count_text = self.font_medium.render("Count:", True, color)
+        self.screen.blit(count_text, (x, y + 40))
+        
+        count_value = self.font_medium.render(f"{count}", True, color)
+        self.screen.blit(count_value, (x + 20, y + 70))
+    
     def draw_result_message(self, message, width):
         if message:
             result_color = (255, 215, 0) if "Win" in message else (255, 255, 255)
