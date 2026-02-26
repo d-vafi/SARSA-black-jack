@@ -1,6 +1,9 @@
-import gymnasium as gym
+"""
+driver file, starts the BlackjackGame
+"""
+from blackjack_game import BlackjackGame
 
-env = gym.make(id="egg")
 
-
-env.close()
+if __name__ == "__main__":
+    game = BlackjackGame()
+    game.run()
