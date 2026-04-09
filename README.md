@@ -21,8 +21,38 @@ pip install -r requirements.txt
 
 ## Usage
 
-Run training and evaluation:
+Run from the `src` directory.
+
+Train SARSA agent:
 ```bash
-python main.py
+python3 main.py --mode train --episodes 200000 --no-log
+```
+Training prints train/eval summary metrics to terminal when complete.
+
+Disable file logging for any run:
+add the `--no-log` flag
+
+Evaluate saved model:
+```bash
+python3 main.py --mode eval --model-path ../models/sarsa_blackjack_sarsa.pkl --eval-episodes 200000 --no-log
+```
+
+Render a short self-play run (so we can see what it does in real-time):
+```bash
+python3 main.py --mode play --model-path ../models/sarsa_blackjack_sarsa.pkl --eval-episodes 50 --render --no-log
+```
+`--mode play --render` opens a pygame window and visualizes the trained policy. Without `--render`, play runs headless and prints summary metrics only.
+
+
+Run the existing pygame UI manually:
+```bash
+python3 main.py --mode ui
+```
+
+## Logging
+
+All runtime logs are written to:
+```bash
+./logs/blackjack.log
 ```
 
