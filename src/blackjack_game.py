@@ -14,6 +14,7 @@ import pygame
 from game_state import GameState
 from ui_components import Button
 from renderer import GameRenderer
+from logger_config import get_logger
 
 
 class BlackjackGame:
@@ -23,15 +24,16 @@ class BlackjackGame:
 
 
     def __init__(self):
-        print("=" * 60)
-        print("[INIT] Initializing Blackjack Game")
         pygame.init()
+        self.logger = get_logger("blackjack_game")
+        self.logger.info("=" * 60)
+        self.logger.info("[INIT] Initializing Blackjack Game")
         self.width = self.SCREEN_WIDTH
         self.normal_height = self.SCREEN_HEIGHT
         self.height = self.normal_height
         self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
         pygame.display.set_caption("Blackjack - SARSA Training")
-        print(f"[INIT] Game window created ({self.width}x{self.height})")
+        self.logger.info(f"[INIT] Game window created ({self.width}x{self.height})")
         
         self.clock = pygame.time.Clock()
         fonts = {
@@ -42,8 +44,8 @@ class BlackjackGame:
         
         self.state = GameState(starting_budget=500, bet_amount=20)
         self.renderer = GameRenderer(self.screen, fonts)
-        print(f"[INIT] Starting budget: ${self.state.budget}, Bet amount: ${self.state.bet_amount}")
-        print("[INIT] Select your bet amount and click 'START ROUND' to begin")
+        self.logger.info(f"[INIT] Starting budget: ${self.state.budget}, Bet amount: ${self.state.bet_amount}")
+        self.logger.info("[INIT] Select your bet amount and click 'START ROUND' to begin")
         
         # Bet amount buttons
         self.bet_amounts = [10, 20, 50, 100, 200]
@@ -117,13 +119,13 @@ class BlackjackGame:
 
     
     def deal_initial_cards(self):
-        print("\n" + "=" * 60)
-        print("[GAME] Starting new round")
+        self.logger.info("=" * 60)
+        self.logger.info("[GAME] Starting new round")
         
         # Check if player can afford any bet
         min_bet = min(self.bet_amounts)
         if self.state.budget < min_bet:
-            print(f"[ERROR] Cannot afford any bet - Budget: ${self.state.budget}, Minimum bet: ${min_bet}")
+            self.logger.info(f"[ERROR] Cannot afford any bet - Budget: ${self.state.budget}, Minimum bet: ${min_bet}")
             self.state.game_state = "broke"
             return
         
@@ -135,13 +137,13 @@ class BlackjackGame:
                 if self.state.budget >= amount:
                     self.state.bet_amount = amount
                     break
-            print(f"[BET] Auto-adjusted bet from ${old_bet} to ${self.state.bet_amount} (insufficient funds)")
+            self.logger.info(f"[BET] Auto-adjusted bet from ${old_bet} to ${self.state.bet_amount} (insufficient funds)")
             # Update buttons to reflect new bet
             self.bet_buttons.clear()
             self.setup_bet_buttons()
         
         if not self.state.place_bet():
-            print("[ERROR] Cannot place bet - insufficient funds")
+            self.logger.info("[ERROR] Cannot place bet - insufficient funds")
             self.state.game_state = "broke"
             return
         
@@ -151,7 +153,7 @@ class BlackjackGame:
         self.update_button_positions()
         
         if self.state.player_hand.is_blackjack():
-            print("[EVENT] Player has BLACKJACK!")
+            self.logger.info("[EVENT] Player has BLACKJACK!")
             self.stand()
     
     def hit(self):
@@ -160,28 +162,25 @@ class BlackjackGame:
             if self.state.is_split:
                 current_hand = self.state.split_hands[self.state.current_hand_index]
                 if current_hand.is_bust():
-                    print(f"[ERROR] Cannot hit - Hand {self.state.current_hand_index + 1} is already busted!")
+                    self.logger.info(f"[ERROR] Cannot hit - Hand {self.state.current_hand_index + 1} is already busted!")
                     return
                 if current_hand.get_value() == 21:
-                    print(f"[ERROR] Cannot hit - Hand {self.state.current_hand_index + 1} already has 21!")
+                    self.logger.info(f"[ERROR] Cannot hit - Hand {self.state.current_hand_index + 1} already has 21!")
                     return
-                print(f"[ACTION] Player chose: HIT on Hand {self.state.current_hand_index + 1}")
+                self.logger.info(f"[ACTION] Player chose: HIT on Hand {self.state.current_hand_index + 1}")
             else:
                 if self.state.player_hand.is_bust():
-                    print("[ERROR] Cannot hit - Hand is already busted!")
+                    self.logger.info("[ERROR] Cannot hit - Hand is already busted!")
                     return
                 if self.state.player_hand.get_value() == 21:
-                    print("[ERROR] Cannot hit - Hand already has 21!")
+                    self.logger.info("[ERROR] Cannot hit - Hand already has 21!")
                     return
-                print("[ACTION] Player chose: HIT")
+                self.logger.info("[ACTION] Player chose: HIT")
             
             busted = self.state.player_hit()
             
             # Check if we need to move to next hand or finish
             if self.state.is_split:
-                # Check current hand after hit
-                current_hand = self.state.split_hands[self.state.current_hand_index]
-                
                 # If busted is True, we've completed all hands
                 if busted:
                     all_bust = all(hand.is_bust() for hand in self.state.split_hands)
@@ -189,11 +188,11 @@ class BlackjackGame:
                         self.state.game_state = "game_over"
                         self.state.dealer_reveal = True
                         self.state.result_message = "All hands BUST!"
-                        print(f"[RESULT] All hands busted | Budget: ${self.state.budget} | W/L/D: {self.state.wins}/{self.state.losses}/{self.state.draws}")
+                        self.logger.info(f"[RESULT] All hands busted | Budget: ${self.state.budget} | W/L/D: {self.state.wins}/{self.state.losses}/{self.state.draws}")
                         self.update_bet_buttons_after_round()
                     else:
                         # Some hands still alive - dealer plays
-                        print("[SPLIT] All hands played, dealer's turn")
+                        self.logger.info("[SPLIT] All hands played, dealer's turn")
                         self.state.dealer_play()
                         self.state.determine_winner()
                         self.update_bet_buttons_after_round()
@@ -204,26 +203,26 @@ class BlackjackGame:
                     self.update_bet_buttons_after_round()
                 # Auto-stand if player reaches exactly 21
                 elif self.state.game_state == "playing" and self.state.player_hand.get_value() == 21:
-                    print("[AUTO] Player reached 21 - automatically standing")
+                    self.logger.info("[AUTO] Player reached 21 - automatically standing")
                     self.stand()
     
     def stand(self):
         if self.state.game_state == "playing":
             if self.state.is_split:
-                print(f"[ACTION] Player chose: STAND on Hand {self.state.current_hand_index + 1}")
+                self.logger.info(f"[ACTION] Player chose: STAND on Hand {self.state.current_hand_index + 1}")
                 # Move to next hand if available
                 if self.state.current_hand_index < len(self.state.split_hands) - 1:
                     self.state.current_hand_index += 1
-                    print(f"[SPLIT] Moving to Hand {self.state.current_hand_index + 1}")
+                    self.logger.info(f"[SPLIT] Moving to Hand {self.state.current_hand_index + 1}")
                 else:
                     # All hands played, dealer plays
-                    print("[SPLIT] All hands played, dealer's turn")
+                    self.logger.info("[SPLIT] All hands played, dealer's turn")
                     self.state.dealer_play()
                     self.state.determine_winner()
                     # Update bet buttons to reflect new budget
                     self.update_bet_buttons_after_round()
             else:
-                print("[ACTION] Player chose: STAND")
+                self.logger.info("[ACTION] Player chose: STAND")
                 self.state.dealer_play()
                 self.state.determine_winner()
                 # Update bet buttons to reflect new budget
@@ -231,7 +230,7 @@ class BlackjackGame:
     
     def split(self):
         if self.state.game_state == "playing" and self.state.player_hand.can_split():
-            print("[ACTION] Player chose: SPLIT")
+            self.logger.info("[ACTION] Player chose: SPLIT")
             if self.state.split_hand():
                 # Split successful - no screen resize needed
                 pass
@@ -246,23 +245,23 @@ class BlackjackGame:
     def change_bet_amount(self, new_amount):
         if self.state.budget >= new_amount:
             self.state.bet_amount = new_amount
-            print(f"[BET] Bet amount changed to ${new_amount}")
+            self.logger.info(f"[BET] Bet amount changed to ${new_amount}")
             # Update bet button colors
             self.bet_buttons.clear()
             self.setup_bet_buttons()
         else:
-            print(f"[BET] Cannot select ${new_amount} bet - insufficient funds (${self.state.budget} available)")
+            self.logger.info(f"[BET] Cannot select ${new_amount} bet - insufficient funds (${self.state.budget} available)")
     
     def restart_with_new_budget(self):
-        print("\n" + "=" * 60)
-        print("[RESTART] Starting new game with fresh budget")
+        self.logger.info("=" * 60)
+        self.logger.info("[RESTART] Starting new game with fresh budget")
         self.state.budget = 500
         self.state.wins = 0
         self.state.losses = 0
         self.state.draws = 0
         self.state.game_state = "betting"
-        print(f"[RESTART] New budget: ${self.state.budget}")
-        print("[RESTART] Select your bet amount and click 'START ROUND' to begin")
+        self.logger.info(f"[RESTART] New budget: ${self.state.budget}")
+        self.logger.info("[RESTART] Select your bet amount and click 'START ROUND' to begin")
         # Update bet buttons after game over / broke
         self.bet_buttons.clear()
         self.setup_bet_buttons()
@@ -274,7 +273,7 @@ class BlackjackGame:
         # Check if player can't afford minimum bet after a round 
         min_bet = min(self.bet_amounts)
         if self.state.game_state == "game_over" and self.state.budget < min_bet:
-            print(f"[GAME] Budget ${self.state.budget} below minimum bet ${min_bet} - transitioning to broke state")
+            self.logger.info(f"[GAME] Budget ${self.state.budget} below minimum bet ${min_bet} - transitioning to broke state")
             self.state.game_state = "broke"
         
         # Check if player is broke
@@ -432,7 +431,7 @@ class BlackjackGame:
     def handle_game_over_click(self, pos):
         if self.new_game_button.is_clicked(pos):
             action = "START ROUND" if self.state.game_state == "betting" else "NEW GAME"
-            print(f"[ACTION] Player chose: {action}")
+            self.logger.info(f"[ACTION] Player chose: {action}")
             # Update bet buttons before dealing to reflect current budget
             self.update_bet_buttons_after_round()
             self.deal_initial_cards()
@@ -445,11 +444,11 @@ class BlackjackGame:
     def handle_broke_click(self, pos):
         """Handle clicks on the game over (broke) screen"""
         if self.quit_button.is_clicked(pos):
-            print("[ACTION] Player chose: QUIT")
+            self.logger.info("[ACTION] Player chose: QUIT")
             pygame.quit()
             exit()
         elif self.restart_button.is_clicked(pos):
-            print("[ACTION] Player chose: RESTART WITH NEW BUDGET")
+            self.logger.info("[ACTION] Player chose: RESTART WITH NEW BUDGET")
             self.restart_with_new_budget()
     
     def handle_event(self, event):

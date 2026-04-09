@@ -9,3 +9,6 @@ env.bak/
 venv.bak/
 gym_env
 .vscode/
+*.pkl
+*.log
+*.zip
