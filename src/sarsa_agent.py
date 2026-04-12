@@ -21,21 +21,29 @@ from game_state import GameState
 from logger_config import get_logger
 
 
-State = Tuple[int, int, int, int, int, int, int, int, int, int]
+State = Tuple[int, int, int, int, int, int, int]
 Action = int
 BET_AMOUNTS = [10, 20, 50, 100, 200]
 ACTION_SPACE_SIZE = 8  # 0-4 bet index, 5 hit, 6 stand, 7 split
+BUDGET_BUCKET_EDGES = (50, 150, 400, 800)
 DEFAULT_MODEL_PATH = str(Path(__file__).resolve().parents[1] / "models" / "sarsa_blackjack_sarsa.pkl")
+
+
+def _budget_bucket(budget: int) -> int:
+    for idx, edge in enumerate(BUDGET_BUCKET_EDGES):
+        if budget < edge:
+            return idx
+    return len(BUDGET_BUCKET_EDGES)
 
 
 @dataclass
 class SarsaConfig:
-    episodes: int = 200_000
+    episodes: int = 500_000
     alpha: float = 0.05
     gamma: float = 0.99
     epsilon: float = 1.0
     epsilon_min: float = 0.05
-    epsilon_decay: float = 0.99995
+    epsilon_decay: float = 0.999988
     eval_episodes: int = 20_000
     seed: int = 42
     starting_budget: int = 500
@@ -55,12 +63,12 @@ class PygameBlackjackEnv(gym.Env):
 
 
     metadata = {"render_modes": []}
-    SET_BROKE_PENALTY = -20
-    SET_PROFIT_REWARD = 8.0
-    SET_LOSS_PENALTY = -8.0
-    STRATEGY_WIN_REWARD = 1.0
+    SET_BROKE_PENALTY = -40.0
+    SET_PROFIT_REWARD = 20.0
+    SET_LOSS_PENALTY = -20.0
+    STRATEGY_WIN_REWARD = 0.5
     STRATEGY_FOLLOWED_LOST_PENALTY = 0.0
-    STRATEGY_NOT_FOLLOWED_PENALTY = -3.5
+    STRATEGY_NOT_FOLLOWED_PENALTY = -0.5
     BET_SIZE_RISK_THRESHOLD = 150
     BET_SIZE_RISK_PENALTY = -0.3
 
@@ -73,7 +81,7 @@ class PygameBlackjackEnv(gym.Env):
 
         self.action_space = spaces.Discrete(ACTION_SPACE_SIZE)
         self.observation_space = spaces.MultiDiscrete(
-            [4, 33, 12, 2, 2, 2001, 6, 101, 101, 101]
+            [4, 33, 12, 2, 2, len(BUDGET_BUCKET_EDGES) + 1, 6]
         )
 
         self.state = GameState(starting_budget=self.starting_budget, bet_amount=self.bet_amounts[0])
@@ -165,6 +173,8 @@ class PygameBlackjackEnv(gym.Env):
             round_net = self.state.budget - prev_budget
             reward += float(round_net) / 100.0
 
+            # strategy_observed is only True for rounds that entered the "playing"
+            # phase — player-blackjack auto-resolves intentionally skip this block.
             if strategy_observed:
                 round_won = self.state.wins > prev_wins
                 if self.round_followed_strategy:
@@ -293,11 +303,8 @@ class PygameBlackjackEnv(gym.Env):
             dealer_visible,
             usable_ace,
             can_split,
-            min(2000, self.state.budget),
+            _budget_bucket(self.state.budget),
             bet_index,
-            min(100, self.state.wins),
-            min(100, self.state.losses),
-            min(100, self.state.draws),
         )
 
     def _info(self) -> Dict[str, Any]:
@@ -438,6 +445,8 @@ def evaluate_policy(
     q_table = load_q_table(model_path)
     rewards = []
     final_budgets = []
+    strategy_observed_steps = 0
+    strategy_followed_steps = 0
 
     for episode in range(episodes):
         state, info = env.reset(seed=seed + episode)
@@ -446,16 +455,11 @@ def evaluate_policy(
 
         while not done:
             legal_actions = info["legal_actions"]
-            if not legal_actions:
-                action = 0
-            else:
-                action = int(legal_actions[0])
-                best_value = q_table[state][action]
-                for candidate in legal_actions[1:]:
-                    candidate_value = q_table[state][candidate]
-                    if candidate_value > best_value:
-                        best_value = candidate_value
-                        action = int(candidate)
+            action = _greedy_action_from_q_table(q_table, state, legal_actions)
+            if env.state.game_state == "playing" and legal_actions:
+                strategy_observed_steps += 1
+                if action == env._recommended_strategy_action(legal_actions):
+                    strategy_followed_steps += 1
             next_state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             episode_reward += reward
@@ -466,17 +470,24 @@ def evaluate_policy(
 
     rewards_arr = np.array(rewards)
     budget_arr = np.array(final_budgets)
+    strategy_follow_rate = (
+        float(strategy_followed_steps) / strategy_observed_steps
+        if strategy_observed_steps
+        else 0.0
+    )
     results = {
         "episodes": float(episodes),
         "mean_reward": float(np.mean(rewards_arr)),
         "mean_final_budget": float(np.mean(budget_arr)),
         "broke_rate": float(np.mean(budget_arr < min(BET_AMOUNTS))),
+        "strategy_follow_rate": strategy_follow_rate,
     }
 
     logger.info(
         "[EVAL] "
         f"episodes={episodes}, mean_reward={results['mean_reward']:.4f}, "
-        f"mean_final_budget={results['mean_final_budget']:.2f}, broke_rate={results['broke_rate']:.4f}"
+        f"mean_final_budget={results['mean_final_budget']:.2f}, broke_rate={results['broke_rate']:.4f}, "
+        f"strategy_follow_rate={results['strategy_follow_rate']:.4f}"
     )
     return results
 
@@ -591,25 +602,28 @@ def play_policy_rendered(
 
 
 def _print_metrics(prefix: str, metrics: Dict[str, float]) -> None:
-    print(
+    line = (
         f"[{prefix}] episodes={int(metrics['episodes'])} "
         f"mean_reward={metrics['mean_reward']:.4f} "
         f"mean_final_budget={metrics['mean_final_budget']:.2f} "
         f"broke_rate={metrics['broke_rate']:.4f}"
     )
+    if "strategy_follow_rate" in metrics:
+        line += f" strategy_follow_rate={metrics['strategy_follow_rate']:.4f}"
+    print(line)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train and evaluate a SARSA Blackjack agent")
     parser.add_argument("--mode", choices=["train", "eval", "play", "ui"], default="train")
     parser.add_argument("--no-log", action="store_true", help="Disable file logging for this run")
-    parser.add_argument("--episodes", type=int, default=200_000, help="Training episodes")
+    parser.add_argument("--episodes", type=int, default=500_000, help="Training episodes")
     parser.add_argument("--eval-episodes", type=int, default=20_000, help="Evaluation episodes")
     parser.add_argument("--alpha", type=float, default=0.05, help="Learning rate")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
     parser.add_argument("--epsilon", type=float, default=1.0, help="Initial epsilon")
     parser.add_argument("--epsilon-min", type=float, default=0.05, help="Minimum epsilon")
-    parser.add_argument("--epsilon-decay", type=float, default=0.99995, help="Per-episode epsilon decay")
+    parser.add_argument("--epsilon-decay", type=float, default=0.999988, help="Per-episode epsilon decay")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--starting-budget", type=int, default=500)
     parser.add_argument("--max-rounds", type=int, default=50)
