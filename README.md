@@ -19,6 +19,8 @@ source gym_env/bin/activate
 pip install -r requirements.txt
 ```
 
+** you may need to replace python3 with py or python , and pip with pip3 on Windows. 
+
 ## Usage
 
 Run from the `src` directory.
@@ -27,6 +29,12 @@ Train SARSA agent:
 ```bash
 python3 main.py --mode train --episodes 200000 --no-log
 ```
+
+or for the default (500k episodes, takes a few minutes)
+```bash
+python3 src/main.py --mode train --no-log
+```
+
 Training prints train/eval summary metrics to terminal when complete.
 
 Disable file logging for any run:

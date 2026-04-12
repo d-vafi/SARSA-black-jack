@@ -12,3 +12,4 @@ gym_env
 *.pkl
 *.log
 *.zip
+*.ipynb
